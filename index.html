@@ -1,11 +1,52 @@
-<!DOCTYPE html>
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>خدمات إخراج التابلت</title>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/emailjs-com@3.2.0/dist/email.min.js"></script>
     <style>
+        /* أنماط CSS (نفس الأنماط من الكود الأصلي) */
         * {
             margin: 0;
             padding: 0;
@@ -234,6 +275,10 @@
         .btn:hover {
             background: #3182ce;
             transform: translateY(-2px);
+        }
+        .btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
         }
         .back-btn {
             display: flex;
@@ -623,6 +668,11 @@
     </div>
 
     <script>
+        // Initialize EmailJS
+        (function() {
+            emailjs.init("Nr0TCg7McI9aYw8YH");
+        })();
+
         let selectedService = null;
         let serviceDiscountApplied = false;
         const validDiscountCode = "mo218";
@@ -651,6 +701,10 @@
             // Service form submission
             document.getElementById('serviceOrderForm').addEventListener('submit', function(e) {
                 e.preventDefault();
+                const submitButton = this.querySelector('.btn');
+                submitButton.textContent = 'جاري الإرسال...';
+                submitButton.disabled = true;
+
                 const serviceData = {
                     serviceName: serviceNames[selectedService],
                     servicePrice: servicePrices[selectedService],
@@ -659,24 +713,86 @@
                     whatsapp: document.getElementById('serviceWhatsapp').value,
                     governorate: document.getElementById('serviceGovernorate').value,
                     reason: document.getElementById('serviceReason').value,
-                    discountApplied: serviceDiscountApplied
+                    discountCode: serviceDiscountApplied ? validDiscountCode : 'لا يوجد'
                 };
-                showConfirmationSection();
-                // هنا يمكن إضافة دالة لإرسال البيانات إلى الخادم
+
+                // Validate WhatsApp number
+                if (!validatePhoneNumber(serviceData.whatsapp)) {
+                    alert('رقم الواتساب غير صحيح. يرجى إدخال رقم يبدأ بـ 01 ويتكون من 11 رقمًا.');
+                    submitButton.textContent = 'تأكيد طلب الخدمة';
+                    submitButton.disabled = false;
+                    return;
+                }
+
+                // Send email
+                emailjs.send("service_tn1vzso", "template_w6a96vy", {
+                    service_type: serviceData.serviceName,
+                    price: serviceData.finalPrice,
+                    customer_name: serviceData.fullName,
+                    whatsapp: serviceData.whatsapp,
+                    governorate: serviceData.governorate,
+                    reason: serviceData.reason,
+                    discount_code: serviceData.discountCode,
+                    to_email: "momosalahy567@gmail.com"
+                }).then(function(response) {
+                    console.log("تم إرسال البريد بنجاح!", response.status, response.text);
+                    showConfirmationSection();
+                    submitButton.textContent = 'تأكيد طلب الخدمة';
+                    submitButton.disabled = false;
+                }, function(error) {
+                    console.error("فشل إرسال البريد:", error);
+                    alert("حدث خطأ أثناء إرسال الطلب. يرجى المحاولة مرة أخرى أو التواصل معنا عبر واتساب.");
+                    submitButton.textContent = 'تأكيد طلب الخدمة';
+                    submitButton.disabled = false;
+                });
             });
 
             // Consultation form submission
             document.getElementById('consultationForm').addEventListener('submit', function(e) {
                 e.preventDefault();
+                const submitButton = this.querySelector('.btn');
+                submitButton.textContent = 'جاري الإرسال...';
+                submitButton.disabled = true;
+
                 const consultationData = {
                     name: document.getElementById('consultationName').value,
                     whatsapp: document.getElementById('consultationWhatsapp').value,
                     question: document.getElementById('consultationQuestion').value
                 };
-                showConfirmationSection();
-                // هنا يمكن إضافة دالة لإرسال البيانات إلى الخادم
+
+                // Validate WhatsApp number
+                if (!validatePhoneNumber(consultationData.whatsapp)) {
+                    alert('رقم الواتساب غير صحيح. يرجى إدخال رقم يبدأ بـ 01 ويتكون من 11 رقمًا.');
+                    submitButton.textContent = 'إرسال الاستشارة';
+                    submitButton.disabled = false;
+                    return;
+                }
+
+                // Send email
+                emailjs.send("service_tn1vzso", "template_3qesckt", {
+                    service_type: "استشارة مجانية",
+                    customer_name: consultationData.name,
+                    whatsapp: consultationData.whatsapp,
+                    question: consultationData.question,
+                    to_email: "momosalahy567@gmail.com"
+                }).then(function(response) {
+                    console.log("تم إرسال البريد بنجاح!", response.status, response.text);
+                    showConfirmationSection();
+                    submitButton.textContent = 'إرسال الاستشارة';
+                    submitButton.disabled = false;
+                }, function(error) {
+                    console.error("فشل إرسال البريد:", error);
+                    alert("حدث خطأ أثناء إرسال الاستشارة. يرجى المحاولة مرة أخرى أو التواصل معنا عبر واتساب.");
+                    submitButton.textContent = 'إرسال الاستشارة';
+                    submitButton.disabled = false;
+                });
             });
         });
+
+        function validatePhoneNumber(phone) {
+            const regex = /^01[0-2,5]\d{8}$/;
+            return regex.test(phone);
+        }
 
         function selectService(index) {
             selectedService = index;
@@ -745,7 +861,6 @@
 
         function handleFacebookClick() {
             try {
-                // Fallback in case the link doesn't work
                 window.location.href = 'https://www.facebook.com/share/1AgybNEAMh/?mibextid=wwXIfr';
             } catch (error) {
                 alert('حدث خطأ أثناء محاولة الوصول إلى صفحة الفيسبوك. يرجى التحقق من اتصالك بالإنترنت أو تجربة الرابط مباشرة: https://www.facebook.com/share/1AgybNEAMh/?mibextid=wwXIfr');
